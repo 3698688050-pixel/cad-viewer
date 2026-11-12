@@ -125,7 +125,20 @@ function fit() {
   const b = scene.bbox;
   const W = canvas.clientWidth, H = canvas.clientHeight;
   const w = b.x1 - b.x0 || 1, h = b.y1 - b.y0 || 1;
-  const s = Math.min(W / w, H / h) * 0.94;
+
+  // 初始视图：既要看得清，又不能被截断。
+  // 竖屏时完整适应会让图纸只占中间一小条（可读性差），
+  // 但按宽度铺满又会溢出左右。折中：在「完整适应」与「宽度铺满」之间取一个，
+  // 优先保证整张图完整可见，同时尽量放大。
+  const sFit = Math.min(W / w, H / h) * 0.94;
+  const sFillW = (W * 0.98) / w;
+  const sFillH = (H * 0.92) / h;
+
+  // 取能完整容纳整图的较大者；若图纸很宽，宽度会成为瓶颈
+  let s = Math.min(sFillW, sFillH);
+  // 若完整适应明显更大（图纸偏窄），用它
+  if (sFit > s) s = sFit;
+
   view.s = s;
   view.x = W / 2 - ((b.x0 + b.x1) / 2) * s;
   view.y = H / 2 + ((b.y0 + b.y1) / 2) * s;   // Y 轴翻转
@@ -275,7 +288,9 @@ function draw() {
   //  1) 字高足够（≥7 CSS px 且 ≥18 物理像素）→ 按真实比例画
   //  2) 字高太小 → 固定用 MIN_TEXT 绘制，但要先做碰撞检测：
   //     放大后若与已画文字/线条相撞，就跳过，避免糊成一团。
-  ctx.fillStyle = '#9db4cd';
+  //
+  // 用黄色：黑底上最跳，且不与白色图线混淆。
+  // 加深色描边，压在线条上也能看清。
   let drawn = 0;
   const placed = [];                       // 已放置文字的屏幕框
 
@@ -309,10 +324,18 @@ function draw() {
     ctx.font = `${size.toFixed(1)}px system-ui, "PingFang SC", sans-serif`;
     const w = ctx.measureText(clean).width;
 
-    // 屏幕外不画
-    if (x + w < 0 || x > canvas.clientWidth || y < -size || y > canvas.clientHeight + size) continue;
+    // 完全在屏幕外就不画
+    if (y < -size || y > canvas.clientHeight + size) continue;
+    if (x + w < 0 || x > canvas.clientWidth) continue;
 
-    const box = { x0: x, y0: y - size * 0.85, x1: x + w, y1: y + size * 0.25 };
+    // 部分超出屏幕左右边缘时，横向挪回来（避免文字被切掉半截）
+    let dx = 0;
+    if (x < 0) dx = -x;
+    else if (x + w > canvas.clientWidth) dx = canvas.clientWidth - (x + w);
+    if (Math.abs(dx) > w * 0.6) continue;   // 挪太多说明根本不在视野里
+    const tx2 = x + dx;
+
+    const box = { x0: tx2, y0: y - size * 0.85, x1: tx2 + w, y1: y + size * 0.25 };
 
     // 固定字号才需要碰撞检测（正常比例的本来就该按原样显示）
     if (scaled) {
@@ -323,7 +346,15 @@ function draw() {
       if (clash) continue;
     }
 
-    ctx.fillText(clean, x, y);
+    // 先描一圈深色边（让黄字压在白色线条上也能读），再填黄
+    ctx.lineWidth = Math.max(2, size * 0.28);
+    ctx.strokeStyle = '#0e0e10';
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.strokeText(clean, tx2, y);
+
+    ctx.fillStyle = '#ffcc33';
+    ctx.fillText(clean, tx2, y);
     placed.push(box);
     drawn++;
   }
@@ -398,13 +429,16 @@ function zoomAt(cx, cy, k) {
   scheduleDraw();
 }
 
-/** 适应窗口时的缩放比 */
+/** 适应窗口时的缩放比（与 fit() 保持一致） */
 function fitScale() {
   if (!scene) return 1;
   const b = scene.bbox;
   const W = canvas.clientWidth, H = canvas.clientHeight;
   const w = b.x1 - b.x0 || 1, h = b.y1 - b.y0 || 1;
-  return Math.min(W / w, H / h) * 0.94;
+  const sFit = Math.min(W / w, H / h) * 0.94;
+  let s = Math.min((W * 0.98) / w, (H * 0.92) / h);
+  if (sFit > s) s = sFit;
+  return s;
 }
 
 // 双指缩放
