@@ -22,14 +22,21 @@ assert.deepEqual(textPos({ insertionPoint: { x: 3, y: 4 } }), { x: 3, y: 4 }, 'M
 assert.equal(textH({ textHeight: 80 }), 80, 'textHeight');
 assert.equal(textH({}), 40, '默认字高');
 
-// 3. 文字显示阈值（关键：不能钳最小字号）
-const shouldDraw = (h, s) => {
-  const px = h * s;
-  return px >= 7 && px <= 400;
+// 3. 文字字号策略：够大按比例，太小固定 9px，超上限不画
+const MIN_TEXT = 9;
+const textSize = (hCss, dpr) => {
+  if (hCss > 400) return null;
+  if (hCss >= 7 && hCss * dpr >= 18) return hCss;
+  return MIN_TEXT;              // 缩放态
 };
-assert.equal(shouldDraw(83.8, 0.03), false, '整图缩放下不画（避免叠字）');
-assert.equal(shouldDraw(83.8, 0.1), true, '放大后画');
-assert.equal(shouldDraw(83.8, 10), false, '过度放大不画（避免糊屏）');
+assert.equal(textSize(83.8 * 0.03, 3), MIN_TEXT, '整图缩放下用固定 9px');
+assert.equal(textSize(83.8 * 0.2, 3), 16.76, '够大时按比例');
+assert.equal(textSize(1000, 3), null, '过度放大不画');
+
+// 4. 固定字号时的碰撞检测
+const hit = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+assert.equal(hit({x0:0,y0:0,x1:10,y1:10}, {x0:5,y0:5,x1:15,y1:15}), true, '重叠判定');
+assert.equal(hit({x0:0,y0:0,x1:10,y1:10}, {x0:20,y0:0,x1:30,y1:10}), false, '不重叠判定');
 
 // 4. 坐标变换一致性（放大放大后原点不移）
 const view = { x: 0, y: 0, s: 1 };

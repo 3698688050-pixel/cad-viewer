@@ -11,6 +11,7 @@ let scene = null;          // { entities, bbox }
 let view = { x: 0, y: 0, s: 1 };   // 平移 + 缩放
 let dpr = window.devicePixelRatio || 1;
 let rafPending = false;    // 重绘节流标志
+const MIN_TEXT = 9;        // 文字最小显示字号（CSS px）
 let textTotal = 0;         // 文字总数
 let textDrawn = 0;         // 本次实际绘制数
 
@@ -269,12 +270,15 @@ function draw() {
   }
 
   // 文字
-  // 关键：不能钳最小字号。
-  // 原字高在整图缩放下只剩 2-3px，若强行放大到 9px，
-  // 文字宽度也会跟着放大 3-4 倍，全部挤在一起糊成一团。
-  // 正确做法：太小的文字不画，放大后才显示。
+  //
+  // 两种画法：
+  //  1) 字高足够（≥7 CSS px 且 ≥18 物理像素）→ 按真实比例画
+  //  2) 字高太小 → 固定用 MIN_TEXT 绘制，但要先做碰撞检测：
+  //     放大后若与已画文字/线条相撞，就跳过，避免糊成一团。
   ctx.fillStyle = '#9db4cd';
   let drawn = 0;
+  const placed = [];                       // 已放置文字的屏幕框
+
   for (const e of texts) {
     const p = textPos(e);
     if (!p) continue;
@@ -288,16 +292,39 @@ function draw() {
       .trim();
     if (!clean) continue;
 
-    // CSS 像素下的字高
     const hCss = textH(e) * view.s;
-    // 设备像素下的字高：iOS 上字体小于约 6 物理像素会丢字形，
-    // 被放大后拉成条纹（DPR=3 时 CSS 2px 只有 6 物理像素）
     const hDev = hCss * dpr;
-    if (hCss < 7 || hDev < 18) continue;  // 太小看不清，放大后再画
-    if (hCss > 400) continue;             // 过渡放大时避免糊屏
 
-    ctx.font = `${hCss.toFixed(1)}px system-ui, "PingFang SC", sans-serif`;
-    ctx.fillText(clean, tx(p.x), ty(p.y));
+    let size, scaled;
+    if (hCss >= 7 && hDev >= 18) {
+      size = hCss;                          // 正常比例
+      scaled = false;
+    } else {
+      size = MIN_TEXT;                      // 固定可读字号
+      scaled = true;
+    }
+    if (hCss > 400) continue;               // 过度放大不画
+
+    const x = tx(p.x), y = ty(p.y);
+    ctx.font = `${size.toFixed(1)}px system-ui, "PingFang SC", sans-serif`;
+    const w = ctx.measureText(clean).width;
+
+    // 屏幕外不画
+    if (x + w < 0 || x > canvas.clientWidth || y < -size || y > canvas.clientHeight + size) continue;
+
+    const box = { x0: x, y0: y - size * 0.85, x1: x + w, y1: y + size * 0.25 };
+
+    // 固定字号才需要碰撞检测（正常比例的本来就该按原样显示）
+    if (scaled) {
+      let clash = false;
+      for (const b of placed) {
+        if (box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0) { clash = true; break; }
+      }
+      if (clash) continue;
+    }
+
+    ctx.fillText(clean, x, y);
+    placed.push(box);
     drawn++;
   }
   textDrawn = drawn;
@@ -306,12 +333,16 @@ function draw() {
   updateHint();
 }
 
-/** 文字因太小被隐藏时给出提示，避免以为渲染出错 */
+/** 文字显示情况提示 */
 function updateHint() {
   const el = $('#hint');
   if (!el || !scene) return;
   if (textDrawn === 0 && textTotal > 0) {
-    el.textContent = `文字过小已隐藏（共 ${textTotal} 处），放大查看`;
+    el.textContent = `文字过小且空间不足，放大查看（共 ${textTotal} 处）`;
+    el.hidden = false;
+  } else if (textDrawn > 0 && textDrawn < textTotal) {
+    // 部分文字因碰撞被跳过，放大后会更完整
+    el.textContent = `已显示 ${textDrawn}/${textTotal} 处标注，放大可见更多`;
     el.hidden = false;
   } else {
     el.hidden = true;
