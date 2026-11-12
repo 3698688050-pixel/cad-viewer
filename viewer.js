@@ -10,6 +10,8 @@ let libredwg = null;
 let scene = null;          // { entities, bbox }
 let view = { x: 0, y: 0, s: 1 };   // 平移 + 缩放
 let dpr = window.devicePixelRatio || 1;
+let textTotal = 0;         // 文字总数
+let textDrawn = 0;         // 本次实际绘制数
 
 // ── 初始化 WASM ──────────────────────────────
 async function init() {
@@ -39,6 +41,7 @@ async function openFile(file) {
         ents.push(e);
       }
     }
+    textTotal = ents.filter((e) => /^(TEXT|MTEXT|ATTDEF)$/.test(e.type)).length;
     scene = { entities: ents, bbox: bboxOf(ents) };
     fit();
     draw();
@@ -229,9 +232,12 @@ function draw() {
   }
 
   // 文字
-  // 手机屏整图显示时字高只剩 2-3px，直接按原尺寸画不可读。
-  // 设最小 9px：太小就按 9px 画（宁可略大，也不能看不见）。
+  // 关键：不能钳最小字号。
+  // 原字高在整图缩放下只剩 2-3px，若强行放大到 9px，
+  // 文字宽度也会跟着放大 3-4 倍，全部挤在一起糊成一团。
+  // 正确做法：太小的文字不画，放大后才显示。
   ctx.fillStyle = '#9db4cd';
+  let drawn = 0;
   for (const e of texts) {
     const p = textPos(e);
     if (!p) continue;
@@ -244,12 +250,31 @@ function draw() {
       .replace(/[{}]/g, '')
       .trim();
     if (!clean) continue;
-    const h = Math.min(300, Math.max(9, textH(e) * view.s));
+
+    const h = textH(e) * view.s;
+    if (h < 7) continue;                  // 太小看不清，放大后再画
+    if (h > 400) continue;                // 过渡放大时避免糊屏
+
     ctx.font = `${h.toFixed(1)}px system-ui, "PingFang SC", sans-serif`;
     ctx.fillText(clean, tx(p.x), ty(p.y));
+    drawn++;
   }
+  textDrawn = drawn;
 
   ctx.restore();
+  updateHint();
+}
+
+/** 文字因太小被隐藏时给出提示，避免以为渲染出错 */
+function updateHint() {
+  const el = $('#hint');
+  if (!el || !scene) return;
+  if (textDrawn === 0 && textTotal > 0) {
+    el.textContent = `文字过小已隐藏（共 ${textTotal} 处），放大查看`;
+    el.hidden = false;
+  } else {
+    el.hidden = true;
+  }
 }
 
 // ── 交互 ─────────────────────────────────────

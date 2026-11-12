@@ -22,10 +22,14 @@ assert.deepEqual(textPos({ insertionPoint: { x: 3, y: 4 } }), { x: 3, y: 4 }, 'M
 assert.equal(textH({ textHeight: 80 }), 80, 'textHeight');
 assert.equal(textH({}), 40, '默认字高');
 
-// 3. 最小可读字号
-const drawH = (h, s) => Math.min(300, Math.max(9, h * s));
-assert.equal(drawH(83.8, 0.03), 9, '极小缩放钳到 9px');
-assert.equal(drawH(83.8, 1), 83.8, '正常缩放不钳');
+// 3. 文字显示阈值（关键：不能钳最小字号）
+const shouldDraw = (h, s) => {
+  const px = h * s;
+  return px >= 7 && px <= 400;
+};
+assert.equal(shouldDraw(83.8, 0.03), false, '整图缩放下不画（避免叠字）');
+assert.equal(shouldDraw(83.8, 0.1), true, '放大后画');
+assert.equal(shouldDraw(83.8, 10), false, '过度放大不画（避免糊屏）');
 
 // 4. 坐标变换一致性（放大放大后原点不移）
 const view = { x: 0, y: 0, s: 1 };
