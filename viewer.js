@@ -159,10 +159,10 @@ function draw() {
   const texts = [];
 
   for (const e of scene.entities) {
-    ctx.beginPath();
     switch (e.type) {
       case 'LINE':
         if (!e.startPoint || !e.endPoint) break;
+        ctx.beginPath();
         ctx.moveTo(tx(e.startPoint.x), ty(e.startPoint.y));
         ctx.lineTo(tx(e.endPoint.x), ty(e.endPoint.y));
         ctx.stroke();
@@ -170,15 +170,18 @@ function draw() {
 
       case 'CIRCLE':
         if (!e.center) break;
+        ctx.beginPath();                 // 每条独立路径，避免连线
         ctx.arc(tx(e.center.x), ty(e.center.y), Math.max(0.5, (e.radius || 0) * view.s), 0, Math.PI * 2);
         ctx.stroke();
         break;
 
       case 'ARC': {
         if (!e.center) break;
-        // CAD 角度逆时针，Y 轴翻转后需取负
-        ctx.arc(tx(e.center.x), ty(e.center.y), Math.max(0.5, (e.radius || 0) * view.s),
-          -(e.endAngle ?? 0), -(e.startAngle ?? 0));
+        // 一条线有独立路径；CAD 角度逆时针，Y 翻转后取负
+        let a0 = -(e.endAngle ?? 0), a1 = -(e.startAngle ?? 0);
+        if (a1 < a0) a1 += Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(tx(e.center.x), ty(e.center.y), Math.max(0.5, (e.radius || 0) * view.s), a0, a1);
         ctx.stroke();
         break;
       }
@@ -186,8 +189,10 @@ function draw() {
       case 'ELLIPSE': {
         if (!e.center || !e.majorAxisEndPoint) break;
         const a = Math.hypot(e.majorAxisEndPoint.x, e.majorAxisEndPoint.y);
+        if (!isFinite(a) || a <= 0) break;
         const b2 = a * (e.axisRatio ?? 1);
         const rot = Math.atan2(e.majorAxisEndPoint.y, e.majorAxisEndPoint.x);
+        ctx.beginPath();
         ctx.ellipse(tx(e.center.x), ty(e.center.y), Math.max(0.5, a * view.s),
           Math.max(0.5, b2 * view.s), -rot, 0, Math.PI * 2);
         ctx.stroke();
@@ -197,7 +202,8 @@ function draw() {
       case 'LWPOLYLINE':
       case 'POLYLINE': {
         const vs = e.vertices || [];
-        if (!vs.length) break;
+        if (vs.length < 2) break;
+        ctx.beginPath();
         ctx.moveTo(tx(vs[0].x), ty(vs[0].y));
         for (let i = 1; i < vs.length; i++) ctx.lineTo(tx(vs[i].x), ty(vs[i].y));
         if (e.closed) ctx.closePath();
@@ -207,8 +213,9 @@ function draw() {
 
       case 'SPLINE': {
         const ps = e.controlPoints || [];
-        if (!ps.length) break;
-        // 简化：用控制点折线近似。shortcut: 非精确样条，放大后可见折角
+        if (ps.length < 2) break;
+        // shortcut: 用控制点折线近似，非精确样条；放大后可见折角
+        ctx.beginPath();
         ctx.moveTo(tx(ps[0].x), ty(ps[0].y));
         for (let i = 1; i < ps.length; i++) ctx.lineTo(tx(ps[i].x), ty(ps[i].y));
         ctx.stroke();
@@ -216,7 +223,7 @@ function draw() {
       }
 
       case 'HATCH':
-        // 填充略过，只画边界（有边界的话）
+        // 填充略过，只跳过（不画边界，避免大面积实心块盖住图）
         break;
 
       case 'TEXT':
