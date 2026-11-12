@@ -10,6 +10,7 @@ let libredwg = null;
 let scene = null;          // { entities, bbox }
 let view = { x: 0, y: 0, s: 1 };   // 平移 + 缩放
 let dpr = window.devicePixelRatio || 1;
+let rafPending = false;    // 重绘节流标志
 let textTotal = 0;         // 文字总数
 let textDrawn = 0;         // 本次实际绘制数
 
@@ -135,16 +136,35 @@ const ty = (y) => view.y - y * view.s;
 function resize() {
   const r = canvas.getBoundingClientRect();
   dpr = window.devicePixelRatio || 1;
-  canvas.width = r.width * dpr;
-  canvas.height = r.height * dpr;
+  const w = Math.round(r.width * dpr);
+  const h = Math.round(r.height * dpr);
+  // 只在尺寸真的变了时重设，避免无谓清空
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  // 尺寸重设后 context 状态会重置，必须重设变换
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  draw();
+  scheduleDraw();
 }
+
+// iOS 旋转/地址栏收起时 resize 事件不一定触发，用 ResizeObserver 兜底
+if (window.ResizeObserver) {
+  new ResizeObserver(() => resize()).observe(canvas);
+}
+
+// 横竖屏切换：iOS 上 orientationchange 早于布局完成，延迟再量一次
+window.addEventListener('orientationchange', () => {
+  setTimeout(resize, 60);
+  setTimeout(resize, 300);
+  setTimeout(resize, 700);
+});
 
 // ── 绘制 ─────────────────────────────────────
 function draw() {
-  // iOS 上仅 fillRect 偶尔清不干净（拖动留残影），
-  // 用 clearRect + fillRect 双保险，且必须在单位变换下执行
+  // iOS 上仅 fillRect 偶尔清不干净（拖动留残影）。
+  // 必须在单位变换下用 clearRect + fillRect 双保险，
+  // 且尺寸取 canvas.width/height（物理像素），不是 clientWidth
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -154,6 +174,10 @@ function draw() {
 
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineWidth = 1;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.textBaseline = 'alphabetic';
   if (!scene) { ctx.restore(); return; }
 
   ctx.strokeStyle = '#cfd2d8';
@@ -300,11 +324,23 @@ canvas.addEventListener('pointerdown', (ev) => {
   drag = { x: ev.clientX, y: ev.clientY, vx: view.x, vy: view.y };
   canvas.setPointerCapture(ev.pointerId);
 });
+// 重绘节流：pointermove 一帧可能触发多次，
+// 每次同步重绘会跟不上手势，旧帧内容残留 → 拖影。
+// 用 rAF 保证每帧最多画一次。
+function scheduleDraw() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    draw();
+  });
+}
+
 canvas.addEventListener('pointermove', (ev) => {
   if (!drag) return;
   view.x = drag.vx + (ev.clientX - drag.x);
   view.y = drag.vy + (ev.clientY - drag.y);
-  draw();
+  scheduleDraw();
 });
 canvas.addEventListener('pointerup', () => { drag = null; });
 canvas.addEventListener('pointercancel', () => { drag = null; });
@@ -328,7 +364,7 @@ function zoomAt(cx, cy, k) {
   view.s = s2;
   view.x = cx - wx * view.s;
   view.y = cy + wy * view.s;
-  draw();
+  scheduleDraw();
 }
 
 /** 适应窗口时的缩放比 */
