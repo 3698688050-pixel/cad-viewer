@@ -143,11 +143,17 @@ function resize() {
 
 // ── 绘制 ─────────────────────────────────────
 function draw() {
-  const W = canvas.clientWidth, H = canvas.clientHeight;
+  // iOS 上仅 fillRect 偶尔清不干净（拖动留残影），
+  // 用 clearRect + fillRect 双保险，且必须在单位变换下执行
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#0e0e10';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
   ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#0e0e10';
-  ctx.fillRect(0, 0, W, H);
   if (!scene) { ctx.restore(); return; }
 
   ctx.strokeStyle = '#cfd2d8';
@@ -258,11 +264,15 @@ function draw() {
       .trim();
     if (!clean) continue;
 
-    const h = textH(e) * view.s;
-    if (h < 7) continue;                  // 太小看不清，放大后再画
-    if (h > 400) continue;                // 过渡放大时避免糊屏
+    // CSS 像素下的字高
+    const hCss = textH(e) * view.s;
+    // 设备像素下的字高：iOS 上字体小于约 6 物理像素会丢字形，
+    // 被放大后拉成条纹（DPR=3 时 CSS 2px 只有 6 物理像素）
+    const hDev = hCss * dpr;
+    if (hCss < 7 || hDev < 18) continue;  // 太小看不清，放大后再画
+    if (hCss > 400) continue;             // 过渡放大时避免糊屏
 
-    ctx.font = `${h.toFixed(1)}px system-ui, "PingFang SC", sans-serif`;
+    ctx.font = `${hCss.toFixed(1)}px system-ui, "PingFang SC", sans-serif`;
     ctx.fillText(clean, tx(p.x), ty(p.y));
     drawn++;
   }
@@ -308,10 +318,26 @@ canvas.addEventListener('wheel', (ev) => {
 function zoomAt(cx, cy, k) {
   const wx = (cx - view.x) / view.s;
   const wy = (view.y - cy) / view.s;
-  view.s *= k;
+
+  // 限制缩放范围：适应窗口的 0.2 倍 ~ 400 倍，避免放大到空无一物
+  let s2 = view.s * k;
+  const fitS = fitScale();
+  s2 = Math.min(fitS * 400, Math.max(fitS * 0.2, s2));
+  if (s2 === view.s) return;              // 已到边界
+
+  view.s = s2;
   view.x = cx - wx * view.s;
   view.y = cy + wy * view.s;
   draw();
+}
+
+/** 适应窗口时的缩放比 */
+function fitScale() {
+  if (!scene) return 1;
+  const b = scene.bbox;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  const w = b.x1 - b.x0 || 1, h = b.y1 - b.y0 || 1;
+  return Math.min(W / w, H / h) * 0.94;
 }
 
 // 双指缩放
