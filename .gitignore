@@ -1,0 +1,6 @@
+*.dwg
+*.dxf
+*.DWG
+*.DXF
+node_modules/
+.DS_Store

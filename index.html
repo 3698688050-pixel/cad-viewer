@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>CAD 查看器</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e0e10; }
+  body {
+    font: 13px/1.5 -apple-system, system-ui, "PingFang SC", sans-serif;
+    color: #cfd2d8;
+  }
+
+  #screen { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
+
+  /* 顶栏 */
+  #bar {
+    position: fixed; top: 0; left: 0; right: 0; height: 44px;
+    display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    background: linear-gradient(#0e0e10f2, #0e0e1000);
+    pointer-events: none; z-index: 10;
+  }
+  #bar > * { pointer-events: auto; }
+
+  label.btn, button.btn {
+    display: inline-flex; align-items: center; height: 30px; padding: 0 12px;
+    border: 1px solid #2e3138; border-radius: 0; background: #15171a;
+    color: #cfd2d8; font: inherit; cursor: pointer;
+  }
+  label.btn:hover, button.btn:hover { border-color: #4a5058; background: #1c1f23; }
+  label.btn:active, button.btn:active { background: #24282d; }
+
+  #file { display: none; }
+  #file:disabled + label.btn,
+  label.btn.disabled { opacity: .4; pointer-events: none; }
+
+  #info { color: #6f7680; font-size: 12px; flex: 1;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* 空状态 */
+  #empty {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    pointer-events: none; text-align: center;
+  }
+  /* display:flex 会盖掉 hidden 属性，必须显式处理 */
+  #empty[hidden] { display: none; }
+  #empty h1 { font-size: 15px; font-weight: 500; margin: 0; color: #8b9199; }
+  #empty p { margin: 0; font-size: 12px; color: #5a6068; }
+
+  /* 底栏状态 */
+  #status {
+    position: fixed; left: 12px; bottom: 10px; font-size: 12px; color: #6f7680;
+  }
+
+  /* 可拖入提示 */
+  body.dragging #empty h1 { color: #7fb0e0; }
+</style>
+</head>
+<body>
+
+<canvas id="screen"></canvas>
+
+<div id="bar">
+  <input type="file" id="file" accept=".dwg,.dxf" disabled>
+  <label class="btn" for="file" id="openBtn">打开图纸</label>
+  <button class="btn" id="fit">适应窗口</button>
+  <span id="info"></span>
+</div>
+
+<div id="empty">
+  <h1>拖入 DWG 文件</h1>
+  <p>或点击左上角「打开图纸」</p>
+  <p style="margin-top:14px;color:#3e4349">滚轮缩放 · 拖动平移 · 双指捏合</p>
+</div>
+
+<div id="status">初始化…</div>
+
+<script type="module" src="./viewer.js"></script>
+</body>
+</html>
